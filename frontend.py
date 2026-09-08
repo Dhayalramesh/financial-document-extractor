@@ -1,43 +1,54 @@
-"""Streamlit frontend — upload a PDF, call the FastAPI backend,
-display structured results.
+"""Streamlit frontend — upload a PDF, run extraction directly (no
+separate API hop), display structured results.
+
+Note: app/main.py contains the full FastAPI service for this same
+pipeline, runnable locally via `uvicorn app.main:app`. This frontend
+calls the pipeline functions directly for the hosted demo to avoid
+running two separate free-tier services.
 """
 
 import streamlit as st
-import requests
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
+import time
+from app.pdf_parser import extract_text_from_pdf
+from app.extractor import extract_earnings_data
 
 st.set_page_config(page_title="Financial Document Extractor", layout="wide")
-
-# When running locally, backend is localhost. When deployed, this
-# gets overridden via Streamlit secrets (set in Cloud dashboard).
-API_URL = os.environ.get("EXTRACTOR_API_URL", "http://localhost:8000")
 
 st.title("📄 Financial Document Extraction Engine")
 st.caption(
     "Upload a quarterly earnings release PDF. An LLM extracts structured financial "
-    "metrics (revenue, EPS, guidance, sentiment) with schema validation."
+    "metrics (revenue, EPS, guidance, sentiment) with schema validation. "
+    "A FastAPI service wrapping this same pipeline is included in the repo "
+    "(`app/main.py`) — this demo calls it directly to keep hosting simple."
 )
 
 uploaded_file = st.file_uploader("Upload earnings PDF", type=["pdf"])
 
 if uploaded_file is not None:
     with st.spinner("Extracting..."):
-        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-        try:
-            response = requests.post(f"{API_URL}/extract", files=files, timeout=60)
-        except requests.exceptions.ConnectionError:
-            st.error(f"Could not reach the extraction API at {API_URL}. Is the backend running?")
+        file_bytes = uploaded_file.getvalue()
+
+        if len(file_bytes) == 0:
+            st.error("Uploaded file is empty.")
             st.stop()
 
-    if response.status_code != 200:
-        st.error(f"Extraction failed: {response.json().get('detail', 'Unknown error')}")
-        st.stop()
+        try:
+            document_text = extract_text_from_pdf(file_bytes)
+        except Exception as e:
+            st.error(f"Could not parse PDF: {e}")
+            st.stop()
 
-    result = response.json()
-    extracted = result["extracted"]
+        if len(document_text.strip()) < 20:
+            st.error("Could not extract meaningful text from PDF (may be a scanned/image-only PDF).")
+            st.stop()
+
+        try:
+            result = extract_earnings_data(document_text, uploaded_file.name)
+        except Exception as e:
+            st.error(f"Extraction failed: {e}")
+            st.stop()
+
+    extracted = result.extracted.model_dump()
 
     col1, col2 = st.columns([2, 1])
 
@@ -75,8 +86,8 @@ if uploaded_file is not None:
 
     with col2:
         st.subheader("Pipeline Stats")
-        st.metric("Processing time", f"{result['processing_time_ms']:.0f} ms")
-        st.metric("Document length parsed", f"{result['raw_text_char_count']:,} chars")
+        st.metric("Processing time", f"{result.processing_time_ms:.0f} ms")
+        st.metric("Document length parsed", f"{result.raw_text_char_count:,} chars")
 
     with st.expander("Raw JSON response"):
-        st.json(result)
+        st.json(result.model_dump())
