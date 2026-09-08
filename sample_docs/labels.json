@@ -1,0 +1,17 @@
+[
+  {
+    "pdf_path": "sample_docs/nexora_q2_fy26_results.pdf",
+    "expected": {
+      "company_name": "Nexora Technologies Limited",
+      "ticker": "NEXORA",
+      "period": "Q2 FY26",
+      "revenue": "Rs. 4,850 crore",
+      "revenue_yoy_growth_pct": 14.2,
+      "eps": "Rs. 18.65",
+      "eps_yoy_growth_pct": 9.1,
+      "net_profit": "Rs. 712 crore",
+      "net_margin_pct": 14.7,
+      "result_sentiment": "beat"
+    }
+  }
+]
